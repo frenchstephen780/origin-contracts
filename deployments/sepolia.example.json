@@ -1,0 +1,13 @@
+{
+  "network": "Ethereum Sepolia",
+  "chainId": 11155111,
+  "contractVersion": 15,
+  "rpcUrl": "",
+  "poolManager": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+  "platformTreasury": "",
+  "upgradeProposer": "",
+  "validators": [],
+  "validatorThreshold": 1,
+  "upgradeDelaySeconds": 172800,
+  "confirmations": 2
+}
