@@ -1,0 +1,32 @@
+{
+  "name": "origin-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "test": "npm run compile && node --test --test-concurrency=1 test/*.test.mjs",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs",
+    "verify:testnet": "node scripts/verify-testnet.mjs",
+    "upgrade:prepare": "node scripts/prepare-upgrade.mjs",
+    "chain:local": "npm run compile && node scripts/serve-local.mjs",
+    "public:check": "node scripts/check-open-source.mjs",
+    "package:open-source": "node scripts/package-open-source.mjs",
+    "package:source": "npm run compile && node scripts/package-routing-source.mjs"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.6.1",
+    "@uniswap/v4-core": "1.0.2"
+  },
+  "devDependencies": {
+    "ethers": "6.17.0",
+    "hardhat": "3.18.0",
+    "solc": "0.8.30",
+    "solc-v4": "npm:solc@0.8.26"
+  },
+  "description": "Origin fundraising, Uniswap v4 migration, rewards and governance contracts",
+  "license": "MIT"
+}
