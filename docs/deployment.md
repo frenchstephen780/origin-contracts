@@ -1,6 +1,6 @@
 # Architecture, deployment and publication
 
-This guide covers contract wiring, reproducible builds, Sepolia deployment, upgrades, public packaging and the remaining mainnet and routing work. Publishing source does not establish mainnet readiness, explorer verification or routing approval.
+This guide covers contract wiring, reproducible builds, separate Sepolia and Ethereum mainnet deployment workflows, upgrades, public packaging and routing work. Publishing source does not establish mainnet readiness, explorer verification or routing approval.
 
 ## Contract architecture
 
@@ -37,7 +37,9 @@ Official liquidity has fixed ownership, ticks and salt, with no principal-withdr
 
 ## Build artifacts
 
-Run `npm ci --ignore-scripts` and `npm run compile`. Preserve the generated Standard JSON input, compiler version, settings, ABIs, storage layouts, bytecode, and source hashes for each deployment. Explorer verification must use the exact deployed build and constructor arguments, not a later edited source tree.
+Run `npm ci --ignore-scripts` and `npm run compile`. Preserve the generated Standard JSON input, compiler version, settings, ABIs, storage layouts, bytecode, and source hashes for each deployment. Before explorer submission, recompile the preserved input with its exact imports, dependency contents, and settings and compare the resulting bytecode with the deployment artifact. A generated source export alone does not establish that match. Explorer verification must use the exact deployed build and constructor arguments, not a later edited source tree.
+
+The project compiler resolves imports in an ABI-only pass using its dependency whitelist. It then compiles the complete canonical Standard JSON input without an import callback and writes that same input verbatim to `artifacts/standard-input.json`. The build manifest includes `standardInputSHA256` and hashes of the emitted artifact files. These hashes bind the deployment baseline to its actual compiler input and bytecode, even when Solidity source contents have not changed. The separate pinned upstream PoolManager compilation retains its own compiler and import resolution.
 
 ## Sepolia deployment
 
@@ -55,9 +57,30 @@ npm run deploy:testnet -- deployments/sepolia.json --broadcast
 npm run verify:testnet -- deployments/sepolia.json
 ```
 
-This deployment tool supports Ethereum Sepolia only. A mainnet deployment requires a separately reviewed mainnet workflow and network configuration. Do not bypass the testnet chain checks to use this tool on another chain.
+This deployment tool supports Ethereum Sepolia only. Use the independent mainnet workflow below for chain ID 1. Do not bypass the testnet chain checks to use this tool on another chain.
 
 The deployment journal records each submitted transaction before awaiting confirmation. An interrupted workflow can inspect and resume the recorded transaction. A failed or unconfirmed transaction stops the workflow; it does not start an automatic retry loop. Deployment artifacts and receipts remain private runtime records.
+
+## Ethereum mainnet deployment
+
+Copy `deployments/mainnet.example.json` to a separate operation configuration. Set `network` to `ethereum-mainnet`, retain chain ID 1 and the official PoolManager, and supply `expectedDeployer`, platform treasury, upgrade proposer, validators, quorum, confirmations, and Timelock delay. Do not reuse Sepolia deployment records or change the testnet entry point.
+
+```sh
+npm run deploy:mainnet -- deployments/mainnet.json
+```
+
+This command performs read-only preflight. The mainnet entry does not read a key, write a deployment journal, or submit a transaction until `--broadcast` is supplied. Broadcast also checks that the process signing key derives `expectedDeployer`.
+
+Choose `feeMode: "live"` to read current RPC max-fee and priority-fee recommendations before every transaction. Set `maximumDeploymentFeeEther` to the available balance allocated to this operation; fixed fee-cap fields are not required in live mode. Choose `feeMode: "fixed"` to use explicit decimal-string `maxFeePerGasGwei` and `maxPriorityFeePerGasGwei` together with the same total budget field. Omitted `feeMode` retains fixed behavior.
+
+Actual cost is the receipt's gas used multiplied by its effective gas price. The script reserves gas limit multiplied by max fee before submission, checks both remaining operation budget and wallet balance, and records each transaction's chosen fee limits. It includes a bounded gas cushion and stops before a transaction that would exceed the available budget.
+
+```sh
+npm run deploy:mainnet -- deployments/mainnet.json --broadcast
+npm run verify:mainnet -- deployments/mainnet.json
+```
+
+The mainnet workflow archives the exact build before its first transaction. It writes and flushes the transaction hash, nonce, and fee reservation before broadcasting, disables HTTP submission retries, and checks nonce continuity before later transactions. Resumption confirms the same recorded hashes; it does not automatically replace or resend an unknown, failed, or unconfirmed transaction. The configuration, build, deployer, fee mode, and operation budget must match the original journal; the RPC endpoint may change. See [mainnet operations](../scripts/MAINNET-DEPLOYMENT.md) for fee fallbacks, locks, and filesystem recovery boundaries.
 
 ## Configuration boundaries
 
@@ -71,7 +94,7 @@ Review implementation behavior and the ERC-7201 upgrade-control namespace in add
 
 ## Verification scopes
 
-`verify:testnet` checks bytecode, recorded receipts, Timelock roles, service wiring, fee splits, migration quotes, fee ceilings, and reimbursement limits against the archived build. This is an onchain configuration check; it does not submit an explorer verification request.
+`verify:testnet` checks bytecode, recorded receipts, Timelock roles, service wiring, fee splits, migration quotes, fee ceilings, and reimbursement limits against the archived build. `verify:mainnet` also checks creation calldata hashes, nonce-derived addresses, confirmation counts, the exact fee limits recorded for each transaction, and actual total deployment fees. These are onchain configuration checks; they do not submit explorer source-verification requests.
 
 `package:source` exports the current Solidity sources and resolved dependencies for review. Its manifest includes compiler settings and source hashes. Open-source publication, explorer verification, and any third-party router approval are separate operations. This repository includes no prior approval claims or account-specific application materials.
 
@@ -115,9 +138,9 @@ The exact compiler input and build archives must be preserved locally for each d
 
 ## Technical work required before mainnet execution
 
-1. Add and review a dedicated Ethereum mainnet deployment workflow. The existing `deploy:testnet` entry point accepts chain ID 11155111 only. Do not bypass its network checks. Use chain ID 1, independently checked official Uniswap addresses, an explicit signing account, transaction journaling, and a reviewed fee budget.
-2. Run the final build, contract size checks, regression tests, and deployment simulation. Verify the official Universal Router path, including buy and sell directions, supported exact-input and exact-output modes, launch protection, and empty Hook data. Existing project-router and isolated PoolManager tests do not establish official Universal Router compatibility.
-3. Add explorer source-verification submissions using the exact deployed compiler input, compiler version, constructor arguments, dependency licenses, and deployed addresses. Verify implementation and proxy contracts and associate proxies with their implementations. The existing `verify:testnet` command only checks bytecode and configuration onchain; it does not submit Etherscan source verification.
+1. Review the dedicated `deploy:mainnet` workflow and operation configuration. `deploy:testnet` accepts chain ID 11155111 only; do not bypass its checks. Recheck chain ID 1, official Uniswap addresses and code, `expectedDeployer`, transaction journaling, fee mode, and the available deployment budget.
+2. Run the final build, contract size checks, regression tests, and deployment simulation. Reproduce the archived compiler input's bytecode before relying on it for public source verification. Separately verify the official Universal Router path before claiming that compatibility, including buy and sell directions, supported exact-input and exact-output modes, launch protection, and empty Hook data. Existing project-router and isolated PoolManager tests do not establish official Universal Router compatibility.
+3. Submit explorer source verification using the exact deployed compiler input, compiler version, constructor arguments, dependency licenses, and deployed addresses. Verify implementations and proxy contracts and associate proxies with their implementations. `verify:testnet` and `verify:mainnet` check bytecode and configuration onchain; neither submits Etherscan source verification.
 4. Replace the application-specific historic Sepolia material with the final mainnet Hook address, verified-source links, real pool ID, current fee behavior, actual administrative controls, and final public repository URL.
 
 Before mainnet execution, recheck the official deployment feed and onchain PoolManager code for the intended network. Do not infer addresses from another network.

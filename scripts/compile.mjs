@@ -42,7 +42,21 @@ function resolveImport(importPath) {
       return { error: error.message };
     }
 }
-const output = JSON.parse(solc.compile(JSON.stringify({ language: "Solidity", sources, settings }), { import: resolveImport }));
+// Resolve the complete dependency graph without generating deployment bytecode.
+// The same import whitelist is used here and for the separate upstream build.
+const dependencyOutput = JSON.parse(solc.compile(JSON.stringify({ language: "Solidity", sources,
+  settings: {...settings, outputSelection: {"*": {"*": ["abi"]}}},
+}), { import: resolveImport }));
+for (const diagnostic of dependencyOutput.errors ?? []) {
+  if (diagnostic.severity === "error") console.error(diagnostic.formattedMessage);
+}
+if ((dependencyOutput.errors ?? []).some(item => item.severity === "error")) process.exit(1);
+const resolvedSources = {...sources, ...Object.fromEntries(Object.entries(imports).map(([name, content]) => [name, {content}]))};
+const canonicalSources = Object.fromEntries(Object.keys(resolvedSources).sort().map(name => [name, resolvedSources[name]]));
+const standardInput = `${JSON.stringify({language: "Solidity", sources: canonicalSources, settings}, null, 2)}\n`;
+// Only this self-contained input produces project artifacts. No import callback
+// is used, so explorer compilation receives exactly the input used by this build.
+const output = JSON.parse(solc.compile(standardInput));
 for (const diagnostic of output.errors ?? []) {
   // selfdestruct is used only by the forced-ETH test constructor.
   if (diagnostic.errorCode === "5159" && diagnostic.sourceLocation?.file.startsWith("test/")) continue;
@@ -52,10 +66,8 @@ if ((output.errors ?? []).some((item) => item.severity === "error")) process.exi
 
 const artifactDir = path.join(root, "artifacts");
 fs.mkdirSync(artifactDir, { recursive: true });
-// Keep exact input contents with artifacts for later explorer verification.
-// Snapshot before the separate 0.8.26 PoolManager compilation resolves imports.
-const verificationSources = {...sources, ...Object.fromEntries(Object.entries(imports).map(([name,content])=>[name,{content}]))};
-fs.writeFileSync(path.join(artifactDir, "standard-input.json"), `${JSON.stringify({language:"Solidity",sources:verificationSources,settings},null,2)}\n`);
+// Archive the exact serialized input supplied to the artifact-producing compiler.
+fs.writeFileSync(path.join(artifactDir, "standard-input.json"), standardInput);
 const emitted = new Set();
 for (const [sourceName, contracts] of Object.entries(output.contracts)) {
   if (!sourceName.startsWith("src/") && !sourceName.startsWith("test/")) continue;
@@ -101,7 +113,12 @@ const sourceHashes = Object.fromEntries([
   ...Object.entries(sources).map(([name, { content }]) => [name, content]),
   ...Object.entries(imports),
 ].map(([name, content]) => [name, createHash("sha256").update(content).digest("hex")]));
+const artifactHashes = Object.fromEntries([...emitted, "PoolManager"].sort().map(name => {
+  const filename = `${name}.json`;
+  return [filename, createHash("sha256").update(fs.readFileSync(path.join(artifactDir, filename))).digest("hex")];
+}));
 fs.writeFileSync(path.join(artifactDir, "build-manifest.json"), `${JSON.stringify({
   compilerVersion: solc.version(), v4CompilerVersion: solcV4.version(), settings, sourceHashes,
+  standardInputSHA256: createHash("sha256").update(standardInput).digest("hex"), artifactHashes,
 }, null, 2)}\n`);
 console.log(`Compiled with ${solc.version()} for ${settings.evmVersion}.`);

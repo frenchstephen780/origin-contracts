@@ -11,6 +11,8 @@
     "test": "npm run compile && node --test --test-concurrency=1 test/*.test.mjs",
     "deploy:testnet": "node scripts/deploy-testnet.mjs",
     "verify:testnet": "node scripts/verify-testnet.mjs",
+    "deploy:mainnet": "node scripts/deploy-mainnet.mjs",
+    "verify:mainnet": "node scripts/verify-mainnet.mjs",
     "upgrade:prepare": "node scripts/prepare-upgrade.mjs",
     "chain:local": "npm run compile && node scripts/serve-local.mjs",
     "public:check": "node scripts/check-open-source.mjs",

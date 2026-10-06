@@ -1,0 +1,19 @@
+{
+  "network": "ethereum-mainnet",
+  "chainId": 1,
+  "contractVersion": 15,
+  "rpcUrl": "",
+  "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+  "expectedDeployer": "",
+  "platformTreasury": "",
+  "upgradeProposer": "",
+  "validators": [""],
+  "validatorThreshold": 1,
+  "upgradeDelaySeconds": 172800,
+  "confirmations": 3,
+  "receiptTimeoutMs": 300000,
+  "feeMode": "fixed",
+  "maxFeePerGasGwei": "",
+  "maxPriorityFeePerGasGwei": "",
+  "maximumDeploymentFeeEther": ""
+}

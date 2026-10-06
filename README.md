@@ -14,7 +14,7 @@ npm test
 
 Tests run on isolated in-process Hardhat networks. The test suite does not use a public RPC, real wallet keys, or funded public-network accounts. Test helpers remain separate from production sources in `test/contracts/`.
 
-Project contracts compile with Solidity 0.8.30. The pinned upstream Uniswap v4 PoolManager compiles with Solidity 0.8.26. Compiler settings use Cancun, viaIR, and 200 optimizer runs. Dependencies and compilers are pinned in `package-lock.json`. Compilation checks runtime and initcode size limits and saves ABIs, storage layouts, source hashes, and Standard JSON input in `artifacts/`.
+Project contracts compile with Solidity 0.8.30. The pinned upstream Uniswap v4 PoolManager compiles with Solidity 0.8.26. Compiler settings use Cancun, viaIR, and 200 optimizer runs. Dependencies and compilers are pinned in `package-lock.json`. The project build first resolves dependencies without generating bytecode, then compiles one complete Standard JSON input without an import callback. It archives that exact input with the artifacts. Compilation checks runtime and initcode size limits and saves ABIs, storage layouts, source hashes, the input hash, and emitted artifact hashes in `artifacts/`.
 
 ## Repository layout
 
@@ -46,13 +46,15 @@ Read the protocol guides in lifecycle order, then use the deployment guide for i
 | [Trading and permanent liquidity](docs/trading.md) | Opening sell tax, swap modes, separate tax custody and bounded liquidity replenishment |
 | [Governance and custody](docs/governance.md) | Treasury and reserve schedules, voting, termination, handover and fund permissions |
 | [Rewards and distributions](docs/rewards.md) | Ordinary fee allocation, holding-age rounds, holder claims, LP income and operating deposits |
-| [Architecture, deployment and publication](docs/deployment.md) | Contract modules, upgrade boundaries, Sepolia tools, verification, public packaging and mainnet prerequisites |
+| [Architecture, deployment and publication](docs/deployment.md) | Contract modules, upgrade boundaries, Sepolia and mainnet tools, verification, public packaging and routing prerequisites |
 
 ## Deployment tools
 
-`deploy:testnet` supports Ethereum Sepolia and defaults to read-only preflight. It requires an explicit configuration file; transactions require `--broadcast` and `DEPLOYER_PRIVATE_KEY` in the process environment. The repository contains no actual deployment configuration, wallet inventory, deployment receipts, or signing keys. See [deployment procedures](docs/deployment.md).
+`deploy:testnet` supports Ethereum Sepolia. The separate `deploy:mainnet` entry supports Ethereum chain ID 1 and checks its official Uniswap PoolManager. Both default to read-only preflight and require an explicit configuration file; transactions require `--broadcast` and `DEPLOYER_PRIVATE_KEY` in the process environment. Mainnet also requires the signing address to match `expectedDeployer`. The repository contains no actual deployment configuration, wallet inventory, deployment receipts, or signing keys. See [deployment procedures](docs/deployment.md) and [mainnet operations](scripts/MAINNET-DEPLOYMENT.md).
 
-`verify:testnet` verifies deployed bytecode and configuration onchain. Explorer source verification is a separate operation using the exact archived compiler input and constructor arguments. Neither an onchain verification report nor a generated source bundle is an explorer verification or a routing approval.
+Mainnet `feeMode: "live"` uses current RPC fee recommendations for each transaction and an operation budget based on the available wallet balance. `feeMode: "fixed"` uses explicit max-fee and priority-fee caps. Receipts determine actual charges from gas used and effective gas price; the gas-limit/max-fee product is only a balance reservation before submission. The mainnet journal records each transaction hash before submission and resumes by checking that hash, without automatic resubmission.
+
+`verify:testnet` and `verify:mainnet` verify deployed bytecode, receipts, and configuration onchain; mainnet also verifies the recorded transaction fee limits and total budget. Explorer source verification is a separate operation using the exact archived compiler input and constructor arguments. First reproduce deployment bytecode from that input, then submit the matching source. Neither an onchain verification report nor a generated source bundle is an explorer verification or a routing approval.
 
 ## Public release
 
