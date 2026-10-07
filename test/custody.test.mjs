@@ -160,7 +160,7 @@ describe("Handover, maintenance and recovery", {concurrency: false}, () => {
     const s=await deployUpgradeableSuite({signer:owner,manager:manager.target,platform:owner.address,proposer:owner.address,validators:[validator.address]});
     const p=await c.createProject(s.factory,{target:eth('1'),creator:founder});
     await tx(p.connect(alice).contribute(0,{value:eth('1'),gasLimit:16000000}));
-    await tx(p.migrate({gasLimit:16000000}));
+    await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000}));
     const t=new Contract(await p.token(),artifact('ProjectToken').abi,alice);
     const g=new Contract(await p.governance(),artifact('UpgradeableCommunityGovernance').abi,founder);
     const r=new Contract(await t.feeRewards(),artifact('UpgradeableProjectRewards').abi,founder);

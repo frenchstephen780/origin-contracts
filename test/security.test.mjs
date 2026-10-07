@@ -37,7 +37,7 @@ describe("Isolated attack reproductions", {concurrency: false}, () => {
     const p = await c.createProject(s.factory, {target, creator: founder});
     await tx(p.connect(alice).contribute(0, {value: target, gasLimit: 1000000}));
     const token = new Contract(await p.token(), artifact('ProjectToken').abi, owner);
-    return {s, p, token, manager, owner, founder, alice, bob, carol, keeper};
+    return {s, p, token, manager, owner, founder, alice, bob, carol, keeper:c.migrationSigner};
   }
   async function governance(c) {
     const [owner, founder, attacker, honest] = c.signers;
@@ -55,7 +55,7 @@ describe("Isolated attack reproductions", {concurrency: false}, () => {
     return {owner, founder, attacker, honest, token, g, vault};
   }
 
-  test('DEFENSE S-01: an expensive permissionless migration cannot consume 98% of LP budget', async () => isolated(async c => {
+  test('DEFENSE S-01: backend-only migration rejects other wallets and caps an expensive authorized transaction', async () => isolated(async c => {
     const {s, p, token, keeper, alice, manager} = await production(c);
     const quote = await s.coordinator.quote(eth('1'));
     const sale = await token.balanceOf(alice.address);
@@ -63,7 +63,9 @@ describe("Isolated attack reproductions", {concurrency: false}, () => {
     const normal = await tx(p.connect(keeper).migrate({gasLimit: 16000000, gasPrice: 1000000000n}));
     const units = await p.migrationGasUnits();
     assert.equal(await c.rpc('evm_revert', [checkpoint]), true);
-    // The sender chooses an expensive priority fee; no privileged key is used.
+    await assert.rejects(() => p.connect(alice).migrate.staticCall({gasLimit:16000000,gasPrice:1000000000n}),
+      error => error.revert?.name === 'Unauthorized');
+    // Even the authorized sender remains subject to the shared ETH budget.
     const highPrice = quote.ethAmount * 98n / 100n / units;
     await assert.rejects(() => p.connect(keeper).migrate.staticCall({gasLimit: 16000000, gasPrice: highPrice}),
       error => error.revert?.name === 'MigrationGasBudgetExceeded');
@@ -84,7 +86,6 @@ describe("Isolated attack reproductions", {concurrency: false}, () => {
     assert.equal(await p.state(), 3n);
     assert.ok(refund <= await p.migrationGasRefundLimit());
     assert.ok(final.ethAmount * 100n >= quote.ethAmount * 98n);
-    assert.ok(profit > 0n, `refund=${refund}; actual gas=${fee}; profit=${profit}`);
     assert.equal(profit, refund - fee);
     assert.equal(await token.balanceOf(alice.address), sale);
     assert.equal(final.sqrtPriceX96, quote.sqrtPriceX96);
@@ -140,7 +141,7 @@ describe("Isolated attack reproductions", {concurrency: false}, () => {
 
   test('REPRO S-04: short-lived personal liquidity captures almost all of a scheduled LP donation', async () => isolated(async c => {
     const {s, p, token, manager, alice, founder} = await production(c, eth('1'));
-    await tx(p.migrate({gasLimit: 16000000}));
+    await tx(p.connect(c.migrationSigner).migrate({gasLimit: 16000000}));
     const key = [ZeroAddress, token.target, 3000, 60, s.hook.target];
     const locker = new Contract(await p.liquidityLocker(), artifact('PermanentLiquidityLocker').abi, alice);
     const operating = new Contract(await token.operatingRewards(), artifact('OperatingRewardsLP').abi, founder);
@@ -336,7 +337,7 @@ describe("Refund and termination integration", {concurrency: false}, () => {
 
   test('early project termination leaves the real V4 pool tradable in both directions and all four swap modes',async()=>fixture(async({c,s,p,t,founder,validator,wallets})=>{
    for(const wallet of wallets)await tx(p.connect(wallet).contribute(0,{value:eth('0.05')}));
-   await tx(p.migrate({gasLimit:16000000}));
+   await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000}));
    const alice=wallets[2],bob=wallets[3];
    for(const wallet of wallets){
     if(wallet.address===alice.address)continue;
@@ -422,12 +423,12 @@ describe("Refund and termination integration", {concurrency: false}, () => {
 describe("Production ABI authority matrix", {concurrency: false}, () => {
   const restricted={
    CommunityV4ProjectFactory:['claimCreationDeposit','claimCreationFees','claimMigrationFees','depositMigrationFee'],
-   CommunityV4MigrationCoordinator:['configure','configureLPServices','configureServices','configureUpgradeServices','migrate','setMigrationFeeBps','setMigrationGasRefundLimit'],
+   CommunityV4MigrationCoordinator:['configure','configureLPServices','configureServices','configureUpgradeServices','migrate','setMigrationFeeBps','setMigrationGasRefundLimit','setMigrationReimbursementGasUnits'],
    V4FeeHookLP:['afterSwap','beforeSwap','claimPlatform','configureFeePolicy','register','unlockCallback','receive'],
    ProjectSwapRouter:['unlockCallback'],LPRewardDistributor:['configureHook','fund','register','unlockCallback'],
    SwapFeePolicyLP:['initialize','upgradeToAndCall'],
    OriginTimelock:['cancel','grantRole','revokeRole','schedule','scheduleBatch','updateDelay'],
-   ProjectEscrow:['configureTokenMetadata','claimCreatorTokens','claimMigrationGasRefund'],
+   ProjectEscrow:['configureTokenMetadata','claimCreatorTokens','claimMigrationGasRefund','migrate'],
    ProjectToken:['burnSubscription','claim','configureFeeRewards','configureMetadata','configureOperatingRewards',
     'configureRecoveryAuthority','creditEntitlement','issueSubscription','launch','registerLocker','registerProtocolAddresses','setRewardRecovery'],
    UpgradeableCommunityGovernance:['acceptDeveloperTransfer','cancelDeveloperTransfer','cancelWithdrawal','claimInitialWithdrawal',
@@ -449,7 +450,7 @@ describe("Production ABI authority matrix", {concurrency: false}, () => {
       proposer:owner.address,validators:[owner.address],fundraisingPolicyVersion:2});
     const p=await c.createProject(s.factory,{target:eth('1'),creator:founder});
     for(const w of wallets)await tx(p.connect(w).contribute(0,{value:eth('0.05')}));
-    await tx(p.connect(owner).migrate({gasLimit:16000000,gasPrice:1000000000n}));
+    await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000,gasPrice:1000000000n}));
     const bind=(name,address)=>new Contract(address,artifact(name).abi,alice);
     const token=bind('ProjectToken',await p.token()),g=bind('UpgradeableCommunityGovernance',await p.governance());
     const vault=bind('ProjectVault',await g.devVault()),locker=bind('PermanentLiquidityLocker',await p.liquidityLocker());
@@ -524,7 +525,7 @@ describe("Production ABI authority matrix", {concurrency: false}, () => {
      }
     }
     const writes=evidence.filter(e=>e.kind==='write');
-    assert.equal(writes.length,138);
+    assert.equal(writes.length,139);
     fs.mkdirSync(new URL('../.run/',import.meta.url),{recursive:true});
     fs.writeFileSync(new URL('../.run/latest-entrypoint-matrix.json',import.meta.url),JSON.stringify({generatedAt:new Date().toISOString(),
      scope:'Latest complete suite deployed to independent local EVM; sample reads and unprivileged writes. This matrix complements business success-path tests.',

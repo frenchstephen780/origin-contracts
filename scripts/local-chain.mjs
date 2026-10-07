@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { BrowserProvider, Contract, ContractFactory, id, parseEther } from "ethers";
+import { BrowserProvider, Contract, ContractFactory, JsonRpcSigner, id, parseEther } from "ethers";
 import { network } from "hardhat";
 
 export function artifact(name) {
@@ -18,6 +18,11 @@ export async function createLocalChain() {
   const provider = new BrowserProvider(connection.provider, undefined, { cacheTimeout: -1 });
   const signers = await Promise.all(Array.from({ length: 6 }, (_, index) => provider.getSigner(index)));
   const rpc = (method, params = []) => connection.provider.request({ method, params });
+  // This impersonation exists only in the isolated Hardhat fixture, never on a live RPC.
+  const migrationExecutor = "0x8330F65fa8DEd47ED944f1981fAe9D9a7633E1d9";
+  await rpc("hardhat_impersonateAccount", [migrationExecutor]);
+  await rpc("hardhat_setBalance", [migrationExecutor, "0x21e19e0c9bab2400000"]);
+  const migrationSigner = new JsonRpcSigner(provider, migrationExecutor);
   const balance = async (address) => BigInt(await rpc("eth_getBalance", [address, "latest"]));
   const timestamp = async () => Number((await rpc("eth_getBlockByNumber", ["latest", false])).timestamp);
   const mineAt = async (time) => {
@@ -51,5 +56,5 @@ export async function createLocalChain() {
     provider.destroy();
     await connection.close();
   }
-  return { connection, provider, signers, rpc, balance, timestamp, mineAt, deploy, createProject, close };
+  return { connection, provider, signers, migrationSigner, rpc, balance, timestamp, mineAt, deploy, createProject, close };
 }

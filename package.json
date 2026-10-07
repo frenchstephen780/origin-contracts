@@ -13,6 +13,8 @@
     "verify:testnet": "node scripts/verify-testnet.mjs",
     "deploy:mainnet": "node scripts/deploy-mainnet.mjs",
     "verify:mainnet": "node scripts/verify-mainnet.mjs",
+    "deploy:migration-update": "node scripts/deploy-migration-update.mjs",
+    "verify:migration-update": "node scripts/verify-migration-update.mjs",
     "upgrade:prepare": "node scripts/prepare-upgrade.mjs",
     "chain:local": "npm run compile && node scripts/serve-local.mjs",
     "public:check": "node scripts/check-open-source.mjs",

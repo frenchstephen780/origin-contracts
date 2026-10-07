@@ -73,16 +73,23 @@ abstract contract V4MigrationCoordinatorCore is ReentrancyGuard {
     uint256 public migrationFeeBps = MigrationMath.DEFAULT_MIGRATION_FEE_BPS;
     uint256 public constant MAX_MIGRATION_GAS_REFUND = 0.3 ether;
     uint256 public migrationGasRefundLimit = 0.1 ether;
+    /// @notice Only this backend account can initiate an escrow migration.
+    address public constant migrationExecutor = 0x8330F65fa8DEd47ED944f1981fAe9D9a7633E1d9;
+    /// @notice Estimated reimbursement allowance, independent of execution gasLimit.
+    uint256 public migrationReimbursementGasUnits = 8_000_000;
+    uint256 public constant MAX_MIGRATION_REIMBURSEMENT_GAS_UNITS = type(uint32).max;
     address public migrationFeeAuthority;
     error Unauthorized();
     error InvalidConfiguration();
     error InvalidMigration();
     error InvalidMigrationGasRefundLimit();
+    error InvalidMigrationReimbursementGasUnits();
     event Configured(address factory, address hook);
     event ProjectMigrated(address indexed project, bytes32 indexed poolId, address governance, address locker);
     event UpgradeServicesConfigured(address rewardsDeployer, address feePolicy);
     event MigrationFeeChanged(uint256 previousBps, uint256 newBps);
     event MigrationGasRefundLimitChanged(uint256 previousLimit, uint256 newLimit);
+    event MigrationReimbursementGasUnitsChanged(uint256 previousUnits, uint256 newUnits);
 
     constructor(IPoolManager manager, GovernanceDeployer deployer, address rewardsDeployer_, address tokenDeployer_) {
         if (address(manager).code.length == 0 || address(deployer).code.length == 0) revert InvalidConfiguration();
@@ -180,6 +187,19 @@ abstract contract V4MigrationCoordinatorCore is ReentrancyGuard {
         uint256 previous = migrationGasRefundLimit;
         migrationGasRefundLimit = limit;
         emit MigrationGasRefundLimitChanged(previous, limit);
+    }
+
+    /// @notice Timelock-controlled in production; applies to unlaunched projects.
+    /// Network upgrades can change gas schedules without changing escrow code.
+    /// This allowance is an estimate and is not a measurement of receipt gasUsed.
+    function setMigrationReimbursementGasUnits(uint256 units) external {
+        if (msg.sender != migrationFeeAuthority) revert Unauthorized();
+        if (units < 21_000 || units > MAX_MIGRATION_REIMBURSEMENT_GAS_UNITS) {
+            revert InvalidMigrationReimbursementGasUnits();
+        }
+        uint256 previous = migrationReimbursementGasUnits;
+        migrationReimbursementGasUnits = units;
+        emit MigrationReimbursementGasUnitsChanged(previous, units);
     }
 
     /// @notice Immutable economics selector. Legacy suites retain their original rules.

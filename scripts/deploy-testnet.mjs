@@ -9,7 +9,7 @@ import {assertArtifactRuntime} from './storage-layout.mjs';
 const configPath = process.argv[2];
 if (!configPath) throw Error('Usage: npm run deploy:testnet -- deployments/sepolia.json [--broadcast]');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-if (config.contractVersion !== undefined && config.contractVersion !== 15) throw Error('Configuration must target the current community factory');
+if (config.contractVersion !== undefined && config.contractVersion !== 16) throw Error('Configuration must target the current community factory');
 if (config.chainId !== 11155111) throw Error('This deployment entry supports Ethereum Sepolia (11155111) only');
 const broadcast = process.argv.includes('--broadcast');
 if (!config.rpcUrl) throw Error('Fill rpcUrl in the deployment configuration');

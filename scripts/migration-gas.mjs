@@ -19,7 +19,8 @@ export async function prepareMigration(project, feeOptions = {}) {
  const request=await method.populateTransaction({...fee,gasLimit});
  if(typeof project.runner.getAddress!=='function')throw Error('A signer-connected project is required');
  // eth_call executes the same migration without persisting writes. New escrows
- // return their internally metered units; no estimate is passed as calldata.
+ // return configured reimbursement units in v16, or internally metered units
+ // in earlier escrows. No estimate is passed as calldata.
  const simulated=await provider.call({...request,from:await project.runner.getAddress()});
  let onchainGasUnits=null;
  if(simulated!=='0x'){

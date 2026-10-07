@@ -4,25 +4,26 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {JsonRpcProvider, Contract, ZeroAddress, ZeroHash, formatEther, keccak256, getCreateAddress} from 'ethers';
 import {assertArtifactRuntime} from './storage-layout.mjs';
-import {mainnetArguments, validateMainnetConfig} from './mainnet-config.mjs';
 
 // Reads chain state and writes only its verification report. Never reads keys or sends transactions.
-const {configPath: inputPath} = mainnetArguments(process.argv.slice(2), {verification: true});
+const inputPath = process.argv[2];
+if (!inputPath || process.argv.length !== 3) throw Error('Usage: node scripts/verify-migration-update.mjs CONFIG.json');
 const configPath = path.resolve(inputPath);
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-const settings = validateMainnetConfig(config, {broadcast: true});
+if (![1, 11155111].includes(config.chainId) || config.contractVersion !== 16) throw Error('A v16 migration configuration is required');
+const settings = {expectedDeployer: config.expectedDeployer, manager: config.poolManager, platform: config.platformTreasury, proposer: config.upgradeProposer, validators: config.validators, feeMode: 'live', fees: {totalBudget: BigInt(config.maximumDeploymentFeeWei)}};
 const manifestPath = configPath.replace(/\.json$/i, '') + '.deployed.json';
 const m = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 const digest = data => createHash('sha256').update(data).digest('hex');
 const same = (a, b) => assert.equal(a.toLowerCase(), b.toLowerCase());
 assert.equal(m.complete, true, 'Deployment is incomplete');
-assert.equal(m.chainId, 1);
+assert.equal(m.chainId, config.chainId);
 assert.equal(m.contractVersion, config.contractVersion, 'Manifest version must match its exact archived build');
 same(m.deployer, settings.expectedDeployer);
 same(m.poolManager, settings.manager);
 assert.equal(m.configHash, digest(JSON.stringify({...config, rpcUrl: ''})), 'Configuration changed');
 assert.equal(m.maximumDeploymentFeeWei, String(settings.fees.totalBudget));
-assert.equal(m.feeMode ?? 'fixed', settings.feeMode);
+assert.equal(m.feeMode ?? 'live', settings.feeMode);
 assert.ok(Number.isSafeInteger(m.startingNonce) && m.startingNonce >= 0, 'Recorded starting nonce');
 assert.ok(m.artifactArchive && m.artifactHashes && Object.keys(m.artifactHashes).length, 'Exact artifact archive is required');
 for (const [name, hash] of Object.entries(m.artifactHashes)) {
@@ -33,12 +34,13 @@ const savedArtifact = name => JSON.parse(fs.readFileSync(path.join(m.artifactArc
 const p = new JsonRpcProvider(config.rpcUrl, undefined, {batchMaxCount: 1});
 const bind = (name, address) => new Contract(address, savedArtifact(name).abi, p);
 try {
-  assert.equal((await p.getNetwork()).chainId, 1n);
+  assert.equal((await p.getNetwork()).chainId, BigInt(config.chainId));
   assert.notEqual(await p.getCode(settings.manager), '0x', 'Official PoolManager code');
   assert.equal((await p.getBlock(m.deploymentBlock)).hash, m.deploymentBlockHash);
   for (const [label, r] of Object.entries(m.records)) {
     assertArtifactRuntime(savedArtifact(r.artifact), await p.getCode(r.address));
-    assert.equal(m.transactions[label]?.status, 1, label);
+    if (!r.reused) assert.equal(m.transactions[label]?.status, 1, label);
+    else { const previous = JSON.parse(fs.readFileSync(r.reusedFrom, 'utf8')); const old = previous.records[label]; same(r.address, old.address); assert.equal(r.initHash, old.initHash); assert.equal(r.runtimeHash, old.runtimeHash); }
   }
   let totalFee = 0n;
   let expectedNonce = m.startingNonce;
@@ -48,7 +50,7 @@ try {
     assert.equal(receipt.status, 1, label);
     assert.equal(receipt.blockHash, t.blockHash, label);
     assert.ok(await receipt.confirmations() >= config.confirmations, label);
-    assert.equal(transaction.chainId, 1n, label);
+    assert.equal(transaction.chainId, BigInt(config.chainId), label);
     same(transaction.from, m.deployer);
     assert.equal(transaction.type, 2, label);
     assert.equal(transaction.value, 0n, label);
@@ -63,7 +65,7 @@ try {
       assert.equal(maxFeePerGas, settings.fees.maxFeePerGas, label);
       assert.equal(priorityFeePerGas, settings.fees.maxPriorityFeePerGas, label);
     } else {
-      assert.equal(t.feeMode, 'live', label);
+      assert.ok(t.feeMode === undefined || t.feeMode === 'live', label);
       assert.ok(maxFeePerGas >= priorityFeePerGas && priorityFeePerGas >= 0n, label);
     }
     if (m.records[label]) {
@@ -135,7 +137,13 @@ try {
   assert.ok(migrationGasRefundLimit <= 300_000_000_000_000_000n);
   assert.equal(q.ethAmount, quoteTarget / 2n - quoteTarget * migrationFeeBps / 10_000n);
   assert.equal(q.saleSupply + q.tokenAmount + q.lockedTokenRemainder, 95_000_000n * 10n ** 18n);
-  const report = {chainId: 1, feeMode: settings.feeMode, factory: m.factory, timelock: m.timelock, hook: m.hook,
+  same(await coordinator.migrationExecutor(), '0x8330F65fa8DEd47ED944f1981fAe9D9a7633E1d9');
+  assert.equal(await coordinator.migrationReimbursementGasUnits(), BigInt(config.migrationReimbursementGasUnits));
+  assert.equal(migrationGasRefundLimit, 100_000_000_000_000_000n);
+  const deployerAddress = await coordinator.liquidityDeployer();
+  assertArtifactRuntime(savedArtifact('PermanentLiquidityDeployer'), await p.getCode(deployerAddress));
+  same(deployerAddress, getCreateAddress({from:m.coordinator, nonce:1}));
+  const report = {chainId: config.chainId, migrationExecutor:m.migrationExecutor, reimbursementGasUnits:String(await coordinator.migrationReimbursementGasUnits()), feeMode: settings.feeMode, factory: m.factory, timelock: m.timelock, hook: m.hook,
     deploymentVerified: true, runtimeArtifactsVerified: true, permissionsVerified: true,
     feeSplitsVerified: true, migrationQuoteVerified: true, feeBudgetVerified: true,
     projectCount: String(await factory.projectCount()), migrationFeeBps: Number(migrationFeeBps),

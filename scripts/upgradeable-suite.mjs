@@ -25,6 +25,7 @@ export async function mineHook(deployer, initcode) {
 /// deploy() and configure() can journal each transaction for safe resumption.
 export async function deployUpgradeableSuite({signer, manager, platform, proposer, validators, threshold = 1,
   delay = 172800, deploy, sharedDeployers, lpRewards = true, factoryArtifact, fundraisingPolicyVersion = 1,
+  migrationReimbursementGasUnits,
   configure = async (_label, send) => (await send()).wait()}) {
   if (![1, 2].includes(fundraisingPolicyVersion) || (fundraisingPolicyVersion === 2 && !lpRewards)) throw Error('Unsupported fundraising suite');
   factoryArtifact ??= fundraisingPolicyVersion === 2 ? 'CommunityV4ProjectFactory' : lpRewards ? 'LPV4ProjectFactory' : 'RefundableV4ProjectFactory';
@@ -56,6 +57,12 @@ export async function deployUpgradeableSuite({signer, manager, platform, propose
   const tokenDeployer = sharedDeployers ? null : await deploy('tokenDeployer','ProjectTokenDeployer');
   const coordinator = await deploy('coordinator', fundraisingPolicyVersion === 2 ? 'CommunityV4MigrationCoordinator' : 'SharedV4MigrationCoordinator',
     [manager, governanceDeployer.target, rewardsDeployer.target, sharedDeployers?.tokens ?? tokenDeployer.target]);
+  if (migrationReimbursementGasUnits !== undefined) {
+    const units = BigInt(migrationReimbursementGasUnits);
+    if (units <= 0n) throw Error('Migration reimbursement gas units must be positive');
+    await configure('migrationReimbursementPolicy', () => coordinator.setMigrationReimbursementGasUnits(units),
+      async () => await coordinator.migrationReimbursementGasUnits() === units);
+  }
   const factory = await deploy('factory', factoryArtifact, [platform, coordinator.target]);
   const lpDistributor = lpRewards ? await deploy('lpDistributor', 'LPRewardDistributor', [manager, coordinator.target]) : null;
   const hookDeployer = await deploy('hookDeployer', lpRewards ? 'LPHookDeployer' : 'HookDeployer');

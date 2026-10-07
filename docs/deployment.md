@@ -84,7 +84,9 @@ The mainnet workflow archives the exact build before its first transaction. It w
 
 ## Configuration boundaries
 
-The fixed coordinator exposes Timelock-controlled setters for the [migration fee](fundraising.md#migration-fee-configuration) and [reimbursement budget](fundraising.md#migration-gas-reimbursement). Each project snapshots its fee at creation; reimbursement uses the effective limit at execution. These setters do not replace fixed code.
+The fixed coordinator identifies the authorized backend wallet through `migrationExecutor()` and exposes Timelock-controlled setters for the [migration fee](fundraising.md#migration-fee-configuration), shared `migrationReimbursementGasUnits()` allowance, and [reimbursement budget](fundraising.md#migration-gas-reimbursement). Each project snapshots its fee at creation; compensation uses the effective allowance and ETH limit at execution. Deployment verification must confirm the executor, allowance, authority and ceilings. These setters do not replace fixed code or update old projects retroactively.
+
+The executor address is fixed in coordinator code; allowance and budget setters do not rotate it. The backend must use that address's signing key and hold enough network ETH to front migration fees. Releasing another suite does not change the executor or custody of projects already created under an older factory.
 
 ## Prepare an upgrade
 
@@ -97,6 +99,8 @@ Review implementation behavior and the ERC-7201 upgrade-control namespace in add
 `verify:testnet` checks bytecode, recorded receipts, Timelock roles, service wiring, fee splits, migration quotes, fee ceilings, and reimbursement limits against the archived build. `verify:mainnet` also checks creation calldata hashes, nonce-derived addresses, confirmation counts, the exact fee limits recorded for each transaction, and actual total deployment fees. These are onchain configuration checks; they do not submit explorer source-verification requests.
 
 `package:source` exports the current Solidity sources and resolved dependencies for review. Its manifest includes compiler settings and source hashes. Open-source publication, explorer verification, and any third-party router approval are separate operations. This repository includes no prior approval claims or account-specific application materials.
+
+Explorer verification must inventory every newly created address, including constructor-created deployment services and factory-created project instances. A deployment receipt list alone misses internal CREATE children. Use the exact archived Standard JSON input and compiler settings, reproduce creation/runtime bytecode, reconstruct constructor arguments, submit them through Etherscan V2 for the target chain, and confirm that source is actually published. A submission GUID is not a successful verification. After creating and migrating a project, repeat the inventory for its escrow, token, governance/reward proxies, custody vaults, settlement and permanent liquidity locker. Reused implementations retain their original addresses and verification evidence; they are not newly deployed contracts.
 
 ## Public package
 
@@ -116,7 +120,7 @@ Run `npm test` to compile contracts and execute all nine test entry points seria
 | --- | --- |
 | `fundraising.test.mjs` | Subscription curves, address caps, refunds, deposits and locked token delivery |
 | `migration.test.mjs` | Pool initialization, atomic allocation and project fee snapshots |
-| `migration-gas.test.mjs` | Metering, reimbursement, Timelock budget and hard ceiling |
+| `migration-gas.test.mjs` | Executor authorization, shared compensation allowance, Timelock budget and hard ceiling |
 | `governance.test.mjs` | Base voting, signed ballots, cooldowns, termination thresholds and topics |
 | `custody.test.mjs` | Reserve vesting, first withdrawal, handover, recovery and settlement |
 | `rewards.test.mjs` | Holding age, independent scans, LP income and standalone Merkle distributions |
@@ -137,6 +141,10 @@ Keep private keys, seed phrases, credential-bearing RPC URLs, API tokens, accoun
 The exact compiler input and build archives must be preserved locally for each deployment. They are verification evidence, not substitutes for explorer verification. A public package must be generated from the final source tree; later edits cannot verify an earlier deployment.
 
 ## Technical work required before mainnet execution
+
+For an existing platform, `deploy:migration-update` replaces only the migration-bound services. Copy `deployments/migration-update.example.json` to a private configuration, point `reuseDeployment` at the previous complete deployment and its archived artifacts, and preserve its treasury, Timelock and validator settings. The workflow requires identical bytecode and constructor arguments for all ten reused components. It creates a Coordinator, Factory, LP distributor, Hook and Router, plus the Coordinator's internal liquidity deployer. Existing escrows stay bound to their original contracts.
+
+Run `npm run deploy:migration-update -- PRIVATE_CONFIG.json` for a read-only preflight, then add `--broadcast` to execute the authorized deployment. Fees come from the live RPC recommendation and an explicit total ETH budget bounds the journaled operation. An unknown transaction result must be inspected before resuming; the workflow never automatically resends a recorded transaction. `npm run verify:migration-update -- PRIVATE_CONFIG.json` checks the receipts, exact archived bytecode, bindings, authorities and migration policy. Explorer source verification is a separate step. Configure reimbursement units for the destination network using measured migration receipts, rather than the transaction's execution margin.
 
 1. Review the dedicated `deploy:mainnet` workflow and operation configuration. `deploy:testnet` accepts chain ID 11155111 only; do not bypass its checks. Recheck chain ID 1, official Uniswap addresses and code, `expectedDeployer`, transaction journaling, fee mode, and the available deployment budget.
 2. Run the final build, contract size checks, regression tests, and deployment simulation. Reproduce the archived compiler input's bytecode before relying on it for public source verification. Separately verify the official Universal Router path before claiming that compatibility, including buy and sell directions, supported exact-input and exact-output modes, launch protection, and empty Hook data. Existing project-router and isolated PoolManager tests do not establish official Universal Router compatibility.

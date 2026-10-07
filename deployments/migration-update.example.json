@@ -4,16 +4,15 @@
   "contractVersion": 16,
   "rpcUrl": "",
   "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
-  "expectedDeployer": "",
+  "expectedDeployer": "0x8330F65fa8DEd47ED944f1981fAe9D9a7633E1d9",
   "platformTreasury": "",
   "upgradeProposer": "",
-  "validators": [""],
+  "validators": [],
   "validatorThreshold": 1,
   "upgradeDelaySeconds": 172800,
   "confirmations": 3,
   "receiptTimeoutMs": 300000,
-  "feeMode": "fixed",
-  "maxFeePerGasGwei": "",
-  "maxPriorityFeePerGasGwei": "",
-  "maximumDeploymentFeeEther": ""
+  "reuseDeployment": "",
+  "migrationReimbursementGasUnits": "8000000",
+  "maximumDeploymentFeeWei": ""
 }

@@ -131,7 +131,7 @@ try {
     ]);
     if (!existed && startingNonce !== pendingNonce) throw Error('Deployer has pending transactions before this operation starts');
     manifest = existed ? JSON.parse(fs.readFileSync(outputPath, 'utf8')) : {
-      chainId: 1, network: config.network, contractVersion: 15, deployer: signer.address, feeMode,
+      chainId: 1, network: config.network, contractVersion: 16, deployer: signer.address, feeMode,
       buildHash, artifactHashes, configHash, artifactArchive: archive, startingNonce,
       maximumDeploymentFeeWei: String(fees.totalBudget), records: {}, transactions: {}, complete: false
     };

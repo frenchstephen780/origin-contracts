@@ -9,5 +9,5 @@ contract CommunityV4ProjectFactory is LPV4ProjectFactory {
     constructor(address platform, IMigrationCoordinator coordinator_) LPV4ProjectFactory(platform, coordinator_) {
         require(IFundraisingPolicy(address(coordinator_)).fundraisingPolicyVersion() == 2, "Incorrect fundraising policy");
     }
-    function CONTRACT_VERSION() external pure override returns (uint256) { return 15; }
+    function CONTRACT_VERSION() external pure override returns (uint256) { return 16; }
 }

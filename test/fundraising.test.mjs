@@ -371,7 +371,7 @@ describe("Community pricing and address caps", {concurrency: false}, () => {
    await assert.rejects(()=>p.contribute.staticCall(0,{value:eth('0.01')}));
   }));
   test('community migration solver encodes 1.45P across fees/target boundaries without losing supply or changing sale after gas',async()=>fixture(async(c,s)=>{
-   assert.equal(await s.factory.CONTRACT_VERSION(),15n);
+   assert.equal(await s.factory.CONTRACT_VERSION(),16n);
    for(const fee of [0n,1n,50n,99n,100n])for(const r of [eth('1'),eth('1')+2n,eth('57'),eth('1000000')]){
     const q=await s.coordinator.quoteForFee(r,fee),den=r*1972n,num=q.saleSupply*1495n*(1n<<192n);
     assert.equal(q.saleSupply%544n,0n);
@@ -408,7 +408,7 @@ describe("Community pricing and address caps", {concurrency: false}, () => {
    assert.equal(await p.raised(),eth('1'));assert.equal(await p.contributorCount(),20n);
    assert.equal(await p.totalTokenUnits(),q.saleSupply);
    const balances=await Promise.all(wallets.map(w=>t.balanceOf(w.address)));
-   await tx(p.migrate({gasLimit:16000000,gasPrice:1000000000n}));
+   await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000,gasPrice:1000000000n}));
    const locker=new Contract(await p.liquidityLocker(),artifact('PermanentLiquidityLocker').abi,c.signers[0]),final=await locker.initialQuote();
    assert.equal(final.sqrtPriceX96,q.sqrtPriceX96);assert.equal(final.saleSupply,q.saleSupply);
    assert.equal(final.ethAmount,q.ethAmount-await p.migrationGasRefund());
@@ -456,7 +456,7 @@ describe("Refundable creation deposits", {concurrency: false}, () => {
    await assert.rejects(()=>s.factory.claimCreationFees.staticCall(investor.address));
    await assert.rejects(()=>s.factory.claimCreationDeposit.staticCall(p.target,investor.address));
    await assert.rejects(()=>s.factory.connect(founder).claimCreationDeposit.staticCall(p.target,founder.address));
-   await(await p.connect(investor).contribute(0,{value:eth('1'),gasLimit:600000})).wait();await(await p.migrate({gasLimit:16000000})).wait();assert.equal(await p.state(),3n);
+   await(await p.connect(investor).contribute(0,{value:eth('1'),gasLimit:600000})).wait();await(await p.connect(c.migrationSigner).migrate({gasLimit:16000000})).wait();assert.equal(await p.state(),3n);
    assert.equal(await s.factory.creationDepositClaimable(p.target),true);
    await assert.rejects(()=>s.factory.connect(founder).claimCreationDeposit.staticCall(p.target,ZeroAddress));
    await assert.rejects(()=>s.factory.connect(founder).claimCreationDeposit.staticCall(p.target,s.factory.target));
@@ -483,7 +483,7 @@ describe("Refundable creation deposits", {concurrency: false}, () => {
    const deploy=async(label,name,args=[])=>{if(reuseLabels.includes(label))return s[label==='allocationVerifier'?'verifier':label==='projectProxyDeployer'?'governanceDeployer':label];const v=await c.deploy(name,args);rows.push(label);return v;};
    const next=await deployUpgradeableSuite({signer:c.signers[0],manager:await old.poolManager(),platform:c.signers[0].address,proposer:c.signers[0].address,validators:[c.signers[0].address],lpRewards:false,sharedDeployers:{tokens:await old.tokenDeployer(),rewards:await old.upgradeProtocolAddresses(7)},deploy});
    assert.deepEqual(rows,['coordinator','factory','swapRouter']);assert.notEqual(next.coordinator.target,old.target);
-   const q=await c.createProject(next.factory,{target:eth('1')});await(await q.connect(investor).contribute(0,{value:eth('1'),gasLimit:600000})).wait();await(await q.migrate({gasLimit:16000000})).wait();assert.equal(await q.state(),3n);
+   const q=await c.createProject(next.factory,{target:eth('1')});await(await q.connect(investor).contribute(0,{value:eth('1'),gasLimit:600000})).wait();await(await q.connect(c.migrationSigner).migrate({gasLimit:16000000})).wait();assert.equal(await q.state(),3n);
    const token=new Contract(await q.token(),artifact('ProjectToken').abi,founder);assert.equal(await token.coordinator(),next.coordinator.target);assert.equal(await next.factory.creationDepositClaimable(q.target),true);
   }));
 });
@@ -527,8 +527,8 @@ describe("Locked token delivery", {concurrency: false}, () => {
    const preLaunch=Number(await c.rpc('eth_blockNumber'));
    await c.mineAt(await c.timestamp()+2*DAY);
    const baseline=await f.coordinator.quote(eth('1'));
-   const prepared=await prepareMigration(p.connect(c.signers[5]),{gasPrice:1000000000n});
-   await tx(c.signers[5].sendTransaction(prepared.request));
+   const prepared=await prepareMigration(p.connect(c.migrationSigner),{gasPrice:1000000000n});
+   await tx(c.migrationSigner.sendTransaction(prepared.request));
    assert.equal(await p.state(),3n);
    assert.equal(await t.balanceOf(p.target),RESERVE);
    assert.equal(await t.publicPower(),issued);
@@ -633,7 +633,7 @@ describe("Locked token delivery", {concurrency: false}, () => {
    }
    assert.equal(previous,sale);assert.equal(await p.contributorCount(),20n);
    assert.equal(await p.claimedTokenUnits(),sale);
-   const receipt=await tx(p.migrate({gasLimit:16000000,gasPrice:1000000000n}));
+   const receipt=await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000,gasPrice:1000000000n}));
    assert.ok(receipt.gasUsed<16000000n);
    assert.equal(await t.balanceOf(p.target),RESERVE);
    const locker=new Contract(await p.liquidityLocker(),artifact('PermanentLiquidityLocker').abi,c.signers[0]);

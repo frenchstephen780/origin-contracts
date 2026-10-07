@@ -107,22 +107,22 @@ describe("Pool initialization and atomic custody", {concurrency: false}, () => {
       assert.equal(before - await chain.balance(alice.address) - receipt.gasUsed * receipt.gasPrice, eth("16.5"));
       assert.equal(await f.project.totalTokenUnits(), q);
       assert.equal((await f.project.contributions(alice.address)).tokenUnits + (await f.project.contributions(bob.address)).tokenUnits, q);
-      await (await f.project.connect(bob).migrate({ gasLimit: 16000000 })).wait();
+      await (await f.project.connect(chain.migrationSigner).migrate({ gasLimit: 16000000 })).wait();
       assert.equal(await f.project.state(), 3n);
     });
   });
 
-  test("permissionless retry works after bootstrap is completed; before success claims and dev funding stay locked", async () => {
+  test("backend retry works after bootstrap is completed; before success claims and dev funding stay locked", async () => {
     await fixture({ configure: false }, async (chain, f) => {
       const alice = chain.signers[2];
       await fundOnly(chain, f);
       await assert.rejects(() => f.project.connect(alice).claimTokens(alice.address));
-      await expectRevertedTransaction(() => f.project.migrate({ gasLimit: 16000000 }));
+      await expectRevertedTransaction(() => f.project.connect(chain.migrationSigner).migrate({ gasLimit: 16000000 }));
       assert.equal(await f.project.state(), 1n);
       assert.equal(await chain.balance(f.project.target), eth("57"));
       assert.equal(await f.token.balanceOf(f.project.target), TOTAL - await f.project.totalTokenUnits());
       await (await f.coordinator.configure(f.factory.target, f.hook.target)).wait();
-      await (await f.project.connect(alice).migrate({ gasLimit: 16000000 })).wait();
+      await (await f.project.connect(chain.migrationSigner).migrate({ gasLimit: 16000000 })).wait();
       assert.equal(await f.project.state(), 3n);
       await assert.rejects(() => f.coordinator.configure(f.factory.target, f.hook.target));
       await assert.rejects(() => f.coordinator.connect(alice).migrate({ value: eth("57") }));
@@ -137,7 +137,7 @@ describe("Pool initialization and atomic custody", {concurrency: false}, () => {
       })).wait();
       assert.equal(await f.project.state(), 1n);
       assert.ok(funding.gasUsed < 600000n);
-      await expectRevertedTransaction(() => f.project.migrate({ gasLimit: 16000000 }));
+      await expectRevertedTransaction(() => f.project.connect(chain.migrationSigner).migrate({ gasLimit: 16000000 }));
       assert.equal((await f.router.poolState(f.key))[0], 0n);
       assert.equal(await chain.balance(f.manager.target), 0n);
       assert.equal(await chain.balance(f.coordinator.target), 0n);
@@ -161,7 +161,7 @@ describe("Pool initialization and atomic custody", {concurrency: false}, () => {
       await fundOnly(chain, f);
       const fundedAt = await f.project.fundedAt();
       await chain.mineAt(fundedAt + 2n * BigInt(DAY));
-      await (await f.project.migrate({ gasLimit: 16000000 })).wait();
+      await (await f.project.connect(chain.migrationSigner).migrate({ gasLimit: 16000000 })).wait();
       const gov = new Contract(await f.project.governance(), artifact("ProjectGovernance").abi, chain.signers[0]);
       const vault = new Contract(await gov.devVault(), artifact("ProjectVault").abi, chain.signers[0]);
       const [, dev] = chain.signers;
@@ -450,7 +450,7 @@ describe("Fee configuration and project snapshots", {concurrency: false}, () => 
     let expectedFees=0n,expectedPoolETH=0n;
     for(const [p,rate,q] of [[a,100n,q100],[b,50n,q50],[zero,0n,q0]]){
      if(p===zero)await tx(p.connect(alice).contribute(0,{value:eth('57'),gasLimit:16000000}));
-     await tx(p.connect(bob).migrate({gasLimit:16000000}));
+     await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000}));
      assert.equal(await p.state(),3n);assert.equal(await p.migrationFeeBps(),rate);
      const locker=new Contract(await p.liquidityLocker(),artifact('PermanentLiquidityLocker').abi,owner);
      assert.equal(await locker.migrationFeeBps(),rate);

@@ -25,7 +25,7 @@ contract ProjectEscrow is ReentrancyGuard {
         bool refunded;
     }
 
-    uint256 public constant IMPLEMENTATION_STAGE = 8;
+    uint256 public constant IMPLEMENTATION_STAGE = 9;
     bool public constant subscriptionTokensImmediate = true;
     uint256 public constant TOTAL_SUPPLY = FundraisingCurve.TOTAL_SUPPLY;
     uint256 public constant CREATOR_SUPPLY = FundraisingCurve.CREATOR_SUPPLY;
@@ -63,11 +63,11 @@ contract ProjectEscrow is ReentrancyGuard {
     uint256 public constant MIN_FUNDRAISING_TARGET = 1 ether;
     /// @notice Absolute ceiling for the Timelock-configurable reimbursement budget.
     uint256 public constant MAX_MIGRATION_GAS_REFUND = 0.3 ether;
-    // Covers the remaining positive LP deposit, burn, launch, payout and entry.
-    // Added only to onchain metering; callers cannot supply reimbursable units.
-    uint256 public constant MIGRATION_GAS_OVERHEAD = 500_000;
     address public migrationGasBeneficiary;
+    /// @notice Coordinator allowance captured at launch, not measured execution gas.
     uint256 public migrationGasUnits;
+    /// @notice Legacy getter retained as an alias of the configured allowance.
+    /// No gasleft-based measurement is performed.
     uint256 public migrationGasMeteredUnits;
     uint256 public migrationGasPrice;
     uint256 public migrationGasRefund;
@@ -231,9 +231,9 @@ contract ProjectEscrow is ReentrancyGuard {
         // Migration is a separate transaction. A final investor never pays its gas.
     }
 
-    /// @notice Permissionless retry. All parameters/destinations are fixed.
-    /// @notice An eth_call simulation returns the contract-computed reimbursement
-    /// units without persisting the migration. The transaction computes them again.
+    /// @notice Backend-only migration with no caller-supplied business parameters.
+    /// An eth_call simulation returns the currently configured reimbursement
+    /// allowance; the execution gas limit and fee parameters belong to the transaction.
     function migrate() external nonReentrant returns (uint256 reimbursedGasUnits) {
         _migrate();
         return migrationGasUnits;
@@ -246,9 +246,22 @@ contract ProjectEscrow is ReentrancyGuard {
         return configured > MAX_MIGRATION_GAS_REFUND ? MAX_MIGRATION_GAS_REFUND : configured;
     }
 
+    /// @notice Backend migration account; no transaction can replace this authority.
+    function migrationExecutor() public view returns (address) {
+        return address(coordinator) == address(0) ? address(0) : coordinator.migrationExecutor();
+    }
+
     function _migrate() private {
-        uint256 startingGas = gasleft();
-        if (address(coordinator) == address(0) || state() != State.AwaitingMigration) revert MigrationUnavailable();
+        if (address(coordinator) == address(0)) revert MigrationUnavailable();
+        if (msg.sender != migrationExecutor()) revert Unauthorized();
+        if (state() != State.AwaitingMigration) revert MigrationUnavailable();
+        uint256 reimbursementLimit = migrationGasRefundLimit();
+        uint256 reimbursementUnits = coordinator.migrationReimbursementGasUnits();
+        // Reject rather than truncate reimbursement. Division also avoids an
+        // overflow at an extreme effective transaction fee.
+        if (tx.gasprice != 0 && reimbursementUnits > reimbursementLimit / tx.gasprice) {
+            revert MigrationGasBudgetExceeded(reimbursementUnits, tx.gasprice, reimbursementLimit);
+        }
         token.approve(address(coordinator), LIQUIDITY_SUPPLY);
         (governance, liquidityLocker, poolId) = coordinator.migrate{value: target}();
         token.approve(address(coordinator), 0);
@@ -259,17 +272,10 @@ contract ProjectEscrow is ReentrancyGuard {
             emit MigrationRemainderBurned(remainder);
         }
         if (token.balanceOf(address(this)) != retained) revert MigrationUnavailable();
-        uint256 reimbursementLimit = migrationGasRefundLimit();
         migrationGasBeneficiary = msg.sender;
-        uint256 meteredUnits = startingGas - gasleft() + MIGRATION_GAS_OVERHEAD;
-        migrationGasMeteredUnits = meteredUnits;
-        migrationGasUnits = meteredUnits;
+        migrationGasMeteredUnits = reimbursementUnits;
+        migrationGasUnits = reimbursementUnits;
         migrationGasPrice = tx.gasprice;
-        // Reject rather than truncate reimbursement. Division also avoids an
-        // overflow when a caller supplies an extreme effective transaction fee.
-        if (tx.gasprice != 0 && migrationGasUnits > reimbursementLimit / tx.gasprice) {
-            revert MigrationGasBudgetExceeded(migrationGasUnits, tx.gasprice, reimbursementLimit);
-        }
         // Validate against actual LP funds before multiplying, including overflow.
         uint256 available = PermanentLiquidityLocker(payable(liquidityLocker)).initialEthBudget();
         if (tx.gasprice != 0 && migrationGasUnits > (available - 1) / tx.gasprice) {

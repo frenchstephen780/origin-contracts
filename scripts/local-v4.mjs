@@ -44,7 +44,7 @@ export async function fundAndLaunch(chain, f) {
       value: parseEther(amount), gasLimit: 600_000,
     })).wait();
   }
-  await (await estimateAndMigrate(f.project)).wait();
+  await (await estimateAndMigrate(f.project.connect(chain.migrationSigner))).wait();
   if (await f.project.state() !== 3n) throw new Error("Migration did not complete");
   f.gov = new Contract(await f.project.governance(), artifact("ProjectGovernance").abi, chain.signers[0]);
   f.locker = new Contract(await f.project.liquidityLocker(), artifact("PermanentLiquidityLocker").abi, chain.signers[0]);

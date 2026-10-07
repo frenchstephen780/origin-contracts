@@ -23,7 +23,7 @@ describe("Opening taxes and permanent liquidity", {concurrency: false}, () => {
       const project = await c.createProject(s.factory, {target: eth('1'), creator: founder});
       for (const [who, amount] of [[alice, '0.5'], [bob, '0.25'], [carol, '0.25']])
         await tx(project.connect(who).contribute(0, {value: eth(amount), gasLimit: 600000}));
-      await tx(project.migrate({gasLimit: 16000000}));
+      await tx(project.connect(c.migrationSigner).migrate({gasLimit: 16000000}));
       const token = new Contract(await project.token(), artifact('ProjectToken').abi, owner);
       const locker = new Contract(await project.liquidityLocker(), artifact('PermanentLiquidityLocker').abi, owner);
       const driver = await c.deploy('V4TestRouter', [manager.target]);
@@ -217,7 +217,7 @@ describe("Opening taxes and permanent liquidity", {concurrency: false}, () => {
     await f.c.mineAt(f.start + 300);
     const other = await f.c.createProject(f.s.factory, {target: eth('1'), creator: f.bob});
     await tx(other.connect(f.carol).contribute(0, {value: eth('1'), gasLimit: 600000}));
-    await tx(other.migrate({gasLimit: 16000000}));
+    await tx(other.connect(f.c.migrationSigner).migrate({gasLimit: 16000000}));
     const otherId = await other.poolId();
     assert.equal(await f.s.hook.extraSellTaxBps(otherId), 2500n);
     assert.ok(await f.s.hook.extraSellTaxBps(f.poolId) < 1250n);
@@ -265,7 +265,7 @@ describe("Token checkpoints, metadata and router bounds", {concurrency: false}, 
     assert.equal(await token.name(),'Example Project'); assert.equal(await token.symbol(),'EXAMPLE');
     await assert.rejects(()=>project.configureTokenMetadata('Changed','BAD'));
     await(await project.connect(next).contribute(0,{value:parseEther('1'),gasLimit:600000})).wait();
-    await(await project.migrate({gasLimit:12000000})).wait();
+    await(await project.connect(chain.migrationSigner).migrate({gasLimit:12000000})).wait();
     const gov=new Contract(await project.governance(),artifact('ProjectGovernance').abi,dev);
     for(const address of [f.factory.target,f.hook.target,dividends.target,verifier.target,router.target,await gov.settlement()])assert.equal(await token.excluded(address),true);
     await assert.rejects(()=>f.coordinator.configureServices(dividends.target,verifier.target,router.target));
@@ -320,7 +320,7 @@ describe("Secondary pool permissions", {concurrency: false}, () => {
      proposer:owner.address,validators:[owner.address],fundraisingPolicyVersion:2});
     const p=await c.createProject(s.factory,{target:eth('1')});
     for(const w of wallets)await tx(p.connect(w).contribute(0,{value:eth('0.05')}));
-    await tx(p.migrate({gasLimit:16000000,gasPrice:1000000000n}));
+    await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000,gasPrice:1000000000n}));
     const token=new Contract(await p.token(),artifact('ProjectToken').abi,alice);
     const locker=new Contract(await p.liquidityLocker(),artifact('PermanentLiquidityLocker').abi,owner);
     const driver=await c.deploy('V4TestRouter',[manager.target]);

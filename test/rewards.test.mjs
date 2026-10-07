@@ -471,7 +471,7 @@ describe("LP allocation and income", {concurrency: false}, () => {
     const s=await deployUpgradeableSuite({signer:owner,manager:manager.target,platform:owner.address,proposer:owner.address,validators:[validator.address]});
     const p=await c.createProject(s.factory,{target:eth('1'),creator:founder});
     await tx(p.connect(alice).contribute(0,{value:eth('1'),gasLimit:16000000}));
-    await tx(p.migrate({gasLimit:16000000}));
+    await tx(p.connect(c.migrationSigner).migrate({gasLimit:16000000}));
     assert.equal(await p.state(),3n);
     // These base fee-distribution checks exercise the ordinary post-launch rate.
     // Launch-window behavior is covered separately in trading.test.mjs.

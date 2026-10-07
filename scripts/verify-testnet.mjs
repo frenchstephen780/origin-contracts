@@ -14,7 +14,7 @@ const savedArtifact = name => m.artifactArchive && fs.existsSync(path.join(m.art
   ? JSON.parse(fs.readFileSync(path.join(m.artifactArchive,name+'.json'),'utf8')) : compiled(name);
 assert.equal(m.complete, true, 'Deployment is incomplete');
 assert.equal(config.chainId, 11155111);
-assert.equal(m.contractVersion, 15, 'Use the current-suite manifest and its exact archived build');
+assert.ok([15, 16].includes(m.contractVersion), 'Use a supported manifest and its exact archived build');
 const p = new JsonRpcProvider(config.rpcUrl, undefined, {batchMaxCount: 1});
 const bind = (name, address) => new Contract(address, savedArtifact(name).abi, p);
 const same = (a, b) => assert.equal(a.toLowerCase(), b.toLowerCase());

@@ -29,7 +29,7 @@ describe("UUPS compatibility and Timelock execution", {concurrency: false}, () =
     project = await chain.createProject(suite.factory);
     token = new Contract(await project.token(), artifact('ProjectToken').abi, owner);
     for (const [who, amount] of [[alice, '28.5'], [bob, '14.25'], [carol, '14.25']]) await tx(project.connect(who).contribute(0, {value: eth(amount), gasLimit: 600000}));
-    await tx(project.migrate({gasLimit: 16000000}));
+    await tx(project.connect(chain.migrationSigner).migrate({gasLimit: 16000000}));
     gov = new Contract(await project.governance(), artifact('UpgradeableCommunityGovernance').abi, dev);
     vault = new Contract(await gov.devVault(), artifact('ProjectVault').abi, owner);
     rewards = new Contract(await token.feeRewards(), artifact('UpgradeableProjectRewards').abi, owner);
@@ -298,7 +298,7 @@ describe("Production maintenance integration", {concurrency: false}, () => {
      proposer:owner.address, validators:[owner.address], fundraisingPolicyVersion:2});
     const project = await c.createProject(s.factory, {target:eth('1'), creator:founder});
     for (const w of wallets) await tx(project.connect(w).contribute(0, {value:eth('0.05')}));
-    await tx(project.migrate({gasLimit:16000000, gasPrice:1000000000n}));
+    await tx(project.connect(c.migrationSigner).migrate({gasLimit:16000000, gasPrice:1000000000n}));
     const bind = (name,address,runner=founder) => new Contract(address,artifact(name).abi,runner);
     const token = bind('ProjectToken',await project.token());
     const gov = bind('UpgradeableCommunityGovernance',await project.governance());

@@ -29,7 +29,7 @@ function decimal(value, label, unit, {allowZero = false} = {}) {
 
 export function validateMainnetConfig(config, {broadcast = false} = {}) {
   if (config.chainId !== 1 || config.network !== 'ethereum-mainnet') throw Error('Mainnet entry requires Ethereum chainId 1 and network ethereum-mainnet');
-  if (config.contractVersion !== 15) throw Error('Mainnet configuration must target contractVersion 15');
+  if (config.contractVersion !== 16) throw Error('Mainnet configuration must target contractVersion 16');
   if (config.reuseDeployment !== undefined) throw Error('Mainnet entry requires an independent suite; remove reuseDeployment');
   if (typeof config.rpcUrl !== 'string' || !config.rpcUrl.trim()) throw Error('Set rpcUrl in the mainnet configuration');
   const manager = requiredAddress(config.poolManager, 'poolManager');

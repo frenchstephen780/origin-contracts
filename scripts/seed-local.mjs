@@ -1,8 +1,12 @@
 import fs from 'node:fs';
-import { JsonRpcProvider, Contract, parseEther } from 'ethers';
+import { JsonRpcProvider, JsonRpcSigner, Contract, parseEther } from 'ethers';
 import { artifact } from './local-chain.mjs';
 const provider = new JsonRpcProvider('http://127.0.0.1:8545', undefined, {cacheTimeout:-1});
 if ((await provider.getNetwork()).chainId !== 31337n) throw Error('Local chain only');
+const migrationExecutor='0x8330F65fa8DEd47ED944f1981fAe9D9a7633E1d9';
+await provider.send('hardhat_impersonateAccount',[migrationExecutor]);
+await provider.send('hardhat_setBalance',[migrationExecutor,'0x21e19e0c9bab2400000']);
+const migrationSigner=new JsonRpcSigner(provider,migrationExecutor);
 const config = JSON.parse(fs.readFileSync(new URL('../deployments/local.json',import.meta.url)));
 const factory = new Contract(config.factory,artifact('V4ProjectFactory').abi,await provider.getSigner(1));
 const existingCount=await factory.projectCount();
@@ -24,7 +28,7 @@ for(const [i,idea] of ideas.entries()){
  const event=receipt.logs.map(l=>{try{return factory.interface.parseLog(l)}catch{return null}}).find(l=>l?.name==='ProjectCreated');
  const project=new Contract(event.args.project,artifact('ProjectEscrow').abi,await provider.getSigner(5));
  await(await project.contribute(0,{value:parseEther(fund),gasLimit:16_000_000})).wait();
- if(target===fund) await(await project.migrate({gasLimit:16_000_000})).wait();
+ if(target===fund) await(await project.connect(migrationSigner).migrate({gasLimit:16_000_000})).wait();
  if(target===fund&&await project.state()!==3n)throw Error('V4 migration failed');
  console.log(`${idea.title}: ${project.target}, state ${await project.state()}`);
 }
